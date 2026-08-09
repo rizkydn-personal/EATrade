@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin · Trading System Center</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+<style>
+    :root {
+        --bg: #0b0e14; --bg-card: #12161f; --bg-card-hover: #161b26;
+        --border: #232838; --text: #e6e9f0; --text-muted: #838ba3;
+        --accent: #4f7cff; --profit: #16c784; --loss: #ff4d5e; --warn: #ffb020;
+    }
+    * { box-sizing: border-box; }
+    html { -webkit-text-size-adjust: 100%; }
+    body {
+        margin: 0; background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif;
+        padding: 20px 24px 60px;
+    }
+    .mono { font-family: 'JetBrains Mono', monospace; }
+
+    /* ---------------- HEADER ---------------- */
+    header {
+        display: flex; align-items: center; justify-content: space-between; margin-bottom: 22px;
+        flex-wrap: wrap; gap: 12px;
+    }
+    .header-left { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+    a.back-link {
+        color: var(--text-muted); text-decoration: none; font-size: .85rem;
+        display: inline-flex; align-items: center; gap: 4px;
+    }
+    a.back-link:hover { color: var(--text); }
+    header h1 { font-size: 1.2rem; margin: 0; font-weight: 800; display: flex; align-items: center; gap: 8px; }
+    header h1 .bi { color: var(--accent); }
+    .header-right { display: flex; align-items: center; gap: 10px; }
+    .ws-pill {
+        display: inline-flex; align-items: center; gap: .4rem;
+        padding: .32rem .7rem; border-radius: 999px; font-size: .76rem; font-weight: 600;
+        background: rgba(22,199,132,.12); color: var(--profit);
+    }
+    .ws-pill.offline { background: rgba(255,77,94,.12); color: var(--loss); }
+    .ws-dot {
+        width: 8px; height: 8px; border-radius: 50%; background: currentColor;
+        box-shadow: 0 0 0 0 currentColor; animation: pulse 1.6s infinite;
+    }
+    .ws-pill.offline .ws-dot { animation: none; }
+    @keyframes pulse {
+        0% { box-shadow: 0 0 0 0 rgba(22,199,132,.5); }
+        70% { box-shadow: 0 0 0 6px rgba(22,199,132,0); }
+        100% { box-shadow: 0 0 0 0 rgba(22,199,132,0); }
+    }
+    button.logout {
+        background: transparent; border: 1px solid var(--border); color: var(--text-muted);
+        padding: 7px 14px; border-radius: 8px; font-size: .8rem; cursor: pointer;
+        display: inline-flex; align-items: center; gap: 6px;
+    }
+    button.logout:hover { border-color: var(--loss); color: var(--loss); }
+
+    /* ---------------- CARD ---------------- */
+    .card {
+        background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;
+        padding: 18px 20px; margin-bottom: 18px;
+    }
+    .card-head {
+        display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px;
+        flex-wrap: wrap; gap: 10px;
+    }
+    .card-head h2 {
+        font-size: .95rem; margin: 0; font-weight: 700;
+        display: flex; align-items: center; gap: 8px;
+    }
+    .card-head h2 .bi { color: var(--accent); }
+    .count-badge {
+        background: rgba(79,124,255,.15); color: var(--accent); font-size: .72rem; font-weight: 700;
+        padding: 2px 9px; border-radius: 999px; margin-left: 4px;
+    }
+    .bulk-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .btn {
+        border: 1px solid var(--border); background: #171c28; color: var(--text);
+        padding: 7px 13px; border-radius: 8px; font-size: .78rem; cursor: pointer; font-weight: 600;
+    }
+    .btn:hover { background: var(--bg-card-hover); }
+    .btn:disabled { opacity: .35; cursor: not-allowed; }
+    .btn:disabled:hover { background: #171c28; }
+    .btn-danger { border-color: rgba(255,77,94,.4); color: var(--loss); }
+    .btn-danger:hover { background: rgba(255,77,94,.1); }
+    .btn-profit { border-color: rgba(22,199,132,.4); color: var(--profit); }
+    .btn-profit:hover { background: rgba(22,199,132,.1); }
+    .btn-loss { border-color: rgba(255,176,32,.4); color: var(--warn); }
+    .btn-loss:hover { background: rgba(255,176,32,.1); }
+
+    /* ---------------- EA STATUS: badge + banner + KPI grid ---------------- */
+    .status-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+    .status-badge-lg {
+        display: inline-flex; align-items: center; gap: 8px;
+        padding: 5px 14px; border-radius: 10px; font-size: .82rem; font-weight: 800; letter-spacing: .02em;
+    }
+    .status-badge-lg .bi { font-size: .9rem; }
+    .status-badge-lg.st-ok { background: rgba(22,199,132,.15); color: var(--profit); }
+    .status-badge-lg.st-warn { background: rgba(255,176,32,.15); color: var(--warn); }
+    .status-badge-lg.st-danger { background: rgba(255,77,94,.15); color: var(--loss); }
+    .status-badge-lg.st-idle { background: rgba(131,139,163,.15); color: var(--text-muted); }
+    .mode-label { color: var(--text-muted); font-size: .82rem; }
+    .mode-label strong { color: var(--text); font-weight: 700; }
+
+    .alert-banner {
+        display: none; align-items: flex-start; gap: 10px; padding: 11px 14px; border-radius: 10px;
+        font-size: .82rem; margin-bottom: 14px; line-height: 1.5;
+        background: rgba(255,77,94,.1); border: 1px solid rgba(255,77,94,.3); color: var(--loss);
+    }
+    .alert-banner.show { display: flex; }
+    .alert-banner .bi { font-size: 1rem; margin-top: 1px; flex-shrink: 0; }
+
+    .kpi-grid {
+        display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px;
+        margin-bottom: 14px;
+    }
+    .kpi {
+        background: var(--bg-card-hover); border: 1px solid var(--border); border-radius: 10px;
+        padding: 11px 14px;
+    }
+    .kpi-label {
+        font-size: .66rem; color: var(--text-muted); text-transform: uppercase;
+        letter-spacing: .04em; margin-bottom: 5px; font-weight: 600;
+    }
+    .kpi-value { font-size: 1.02rem; font-weight: 700; }
+    .kpi-sub { font-size: .72rem; color: var(--text-muted); margin-top: 2px; }
+
+    .info-bar {
+        display: flex; align-items: flex-start; gap: 9px; padding: 10px 13px; border-radius: 9px;
+        background: rgba(79,124,255,.08); border: 1px solid rgba(79,124,255,.22);
+        font-size: .8rem; color: var(--text); margin-bottom: 14px; line-height: 1.5;
+    }
+    .info-bar .bi { color: var(--accent); margin-top: 1px; flex-shrink: 0; }
+    .info-bar .label { color: var(--text-muted); }
+
+    .sr-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 12px; }
+
+    .mode-hint { color: var(--text-muted); font-size: .74rem; margin-top: 10px; }
+    .footer-meta { color: var(--text-muted); font-size: .72rem; margin-top: 4px; }
+
+    /* ---------------- TABLES ---------------- */
+    .table-scroll { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+    thead th {
+        text-align: left; color: var(--text-muted); font-weight: 600; font-size: .7rem;
+        text-transform: uppercase; letter-spacing: .03em; padding: 9px 10px; border-bottom: 1px solid var(--border);
+        white-space: nowrap; position: sticky; top: 0; background: var(--bg-card);
+    }
+    tbody td { padding: 10px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    tbody tr:hover { background: var(--bg-card-hover); }
+    tbody tr:last-child td { border-bottom: none; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: .72rem; font-weight: 700; }
+    .badge-buy { background: rgba(22,199,132,.15); color: var(--profit); }
+    .badge-sell { background: rgba(255,77,94,.15); color: var(--loss); }
+    .badge-pending { background: rgba(255,176,32,.15); color: var(--warn); }
+    .badge-neutral { background: rgba(131,139,163,.15); color: var(--text-muted); }
+    .badge-danger { background: rgba(255,77,94,.15); color: var(--loss); }
+    .badge-ok { background: rgba(22,199,132,.15); color: var(--profit); }
+    .pnl-pos { color: var(--profit); }
+    .pnl-neg { color: var(--loss); }
+    .x-btn {
+        background: rgba(255,77,94,.12); border: 1px solid rgba(255,77,94,.35); color: var(--loss);
+        width: 26px; height: 26px; border-radius: 7px; cursor: pointer; font-weight: 700; line-height: 1;
+    }
+    .x-btn:hover { background: rgba(255,77,94,.25); }
+    .empty-row { text-align: center; color: var(--text-muted); padding: 26px !important; }
+    .empty-row .bi { display: block; font-size: 1.3rem; margin-bottom: 6px; opacity: .5; }
+    .detail-text { color: var(--text-muted); }
+
+    /* Modal */
+    .modal-backdrop {
+        position: fixed; inset: 0; background: rgba(0,0,0,.55); display: none;
+        align-items: center; justify-content: center; z-index: 999; padding: 16px;
+    }
+    .modal-backdrop.show { display: flex; }
+    .modal-box {
+        background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;
+        padding: 22px; max-width: 380px; width: 100%;
+    }
+    .modal-box h3 { margin: 0 0 10px; font-size: 1rem; }
+    .modal-box p { color: var(--text-muted); font-size: .85rem; margin: 0 0 18px; }
+    .modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
+    .modal-actions .btn { flex: 1; padding: 10px 13px; }
+    .toast-wrap {
+        position: fixed; top: 16px; right: 16px; left: 16px; z-index: 1000;
+        display: flex; flex-direction: column; align-items: flex-end; gap: 8px;
+    }
+    .toast {
+        padding: 10px 14px; border-radius: 8px; font-size: .82rem; font-weight: 600;
+        min-width: 220px; max-width: 100%; box-shadow: 0 8px 24px rgba(0,0,0,.35);
+    }
+    .toast-ok { background: rgba(22,199,132,.15); border: 1px solid rgba(22,199,132,.4); color: var(--profit); }
+    .toast-err { background: rgba(255,77,94,.15); border: 1px solid rgba(255,77,94,.4); color: var(--loss); }
+
+    /* ---------------- MOBILE LAYOUT ---------------- */
+    @media (max-width: 720px) {
+        body { padding: 14px 12px 50px; }
+        header { flex-direction: column; align-items: stretch; gap: 10px; margin-bottom: 16px; }
+        .header-left { justify-content: space-between; }
+        .header-right { justify-content: space-between; }
+        header h1 { font-size: 1.05rem; }
+
+        .card { padding: 14px 14px; margin-bottom: 14px; border-radius: 10px; }
+        .card-head { margin-bottom: 10px; }
+        .card-head h2 { font-size: .88rem; }
+
+        .kpi-grid, .sr-grid { grid-template-columns: repeat(2, 1fr); }
+
+        .bulk-actions { width: 100%; gap: 6px; }
+        .bulk-actions .btn { flex: 1 1 calc(33.333% - 6px); padding: 9px 6px; font-size: .72rem; }
+        .bulk-actions.mode-actions .btn { flex: 1 1 calc(50% - 6px); }
+
+        .table-scroll { -webkit-overflow-scrolling: touch; }
+        thead th { font-size: .66rem; padding: 8px 8px; white-space: nowrap; }
+        tbody td { font-size: .78rem; padding: 9px 8px; white-space: nowrap; }
+        .x-btn { width: 30px; height: 30px; font-size: 1rem; }
+
+        .modal-box { padding: 18px; }
+        .toast-wrap { left: 10px; right: 10px; top: 10px; align-items: stretch; }
+        .toast { min-width: 0; text-align: center; }
+    }
+</style>
+</head>
+<body>
+<header>
+    <div class="header-left">
+        <a class="back-link" href="/"><i class="bi bi-arrow-left"></i> Dashboard</a>
+        <h1><i class="bi bi-shield-lock-fill"></i> Admin Control Panel</h1>
+    </div>
+    <div class="header-right">
+        <span class="ws-pill offline" id="ws-pill"><span class="ws-dot"></span><span id="ws-text">Menghubungkan...</span></span>
+        <button class="logout" id="logout-btn"><i class="bi bi-box-arrow-right"></i> Logout</button>
+    </div>
+</header>
+
+<div class="card" id="bot-status-card">
+    <div class="card-head">
+        <h2><i class="bi bi-robot"></i> EA Bot Status</h2>
+        <div class="bulk-actions mode-actions">
+            <button class="btn" id="mode-default-btn">Mode: Default</button>
+            <button class="btn btn-loss" id="mode-h24-btn">Mode: 24 Jam ∞</button>
+        </div>
+    </div>
+
+    <div class="status-row">
+        <span class="status-badge-lg st-idle" id="bot-status-badge"><i class=""></i>NO DATA</span>
+        <span class="mode-label">Mode aktif: <strong id="bot-mode">--</strong></span>
+    </div>
+
+    <div class="alert-banner" id="bot-halt-banner">
+        <i class="bi bi-exclamation-triangle-fill"></i>
+        <span id="bot-halt-text">--</span>
+    </div>
+
+    <div class="kpi-grid">
+        <div class="kpi">
+            <div class="kpi-label">Trade Hari Ini</div>
+            <div class="kpi-value mono" id="kpi-bot-trades">--</div>
+        </div>
+        <div class="kpi">
+            <div class="kpi-label">Daily P/L</div>
+            <div style="display:flex; flex-direction:row; gap:5px; align-items:baseline;">
+                <div class="kpi-value mono" id="kpi-bot-daily-pnl">--</div>
+                <div class="kpi-sub" id="kpi-bot-daily-limit">--</div>
+            </div>
+        </div>
+        <div class="kpi">
+            <div class="kpi-label">Risk per Trade</div>
+            <div class="kpi-value mono" id="kpi-bot-risk">--</div>
+        </div>
+        <div class="kpi">
+            <div class="kpi-label">Tick Terakhir</div>
+            <div class="kpi-value mono" id="kpi-bot-last-tick">--</div>
+        </div>
+    </div>
+
+    <div class="info-bar">
+        <i class="bi bi-search"></i>
+        <div style="display: flex; flex-direction: column;">
+            <span class="label">Sedang mencari sinyal:</span>
+            <span id="bot-scan-state" style="margin-left: 5px;">--</span>
+        </div>
+    </div>
+
+    <div class="sr-grid">
+        <div class="kpi">
+            <div class="kpi-label">Sinyal Terakhir</div>
+            <div class="kpi-value mono" id="kpi-bot-last-signal" style="font-size:.88rem;">--</div>
+        </div>
+        <div class="kpi">
+            <div class="kpi-label">Resistance Terdekat</div>
+            <div class="kpi-value mono" id="kpi-bot-resistance">--</div>
+        </div>
+        <div class="kpi">
+            <div class="kpi-label">Support Terdekat</div>
+            <div class="kpi-value mono" id="kpi-bot-support">--</div>
+        </div>
+    </div>
+
+    <div class="mode-hint" id="mode-command-hint"></div>
+    <div class="footer-meta" id="bot-last-update">--</div>
+</div>
+
+<div class="card">
+    <div class="card-head">
+        <h2><i class="bi bi-hourglass-split"></i> Pending Orders <span class="count-badge" id="pending-count">0</span></h2>
+    </div>
+    <div class="table-scroll">
+    <table>
+        <thead><tr>
+            <th>Ticket</th><th>Symbol</th><th>Type</th><th>Volume</th>
+            <th>Price</th><th>SL / TP</th><th>Setup Time</th><th>Comment</th>
+        </tr></thead>
+        <tbody id="pending-table"><tr><td colspan="8" class="empty-row">Memuat...</td></tr></tbody>
+    </table>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-head">
+        <h2><i class="bi bi-lightning-charge-fill"></i> Active Trades <span class="count-badge" id="active-count">0</span></h2>
+        <div class="bulk-actions">
+            <button class="btn btn-profit" id="close-profit-btn">Close All Profit</button>
+            <button class="btn btn-loss" id="close-loss-btn">Close All Loss</button>
+            <button class="btn btn-danger" id="close-all-btn">Close All Position</button>
+        </div>
+    </div>
+    <div class="table-scroll">
+    <table>
+        <thead><tr>
+            <th>Ticket</th><th>Symbol</th><th>Type</th><th>Volume</th><th>Open</th>
+            <th>Current</th><th>SL / TP</th><th>Open Time</th><th>PnL</th><th></th>
+        </tr></thead>
+        <tbody id="active-table"><tr><td colspan="10" class="empty-row">Memuat...</td></tr></tbody>
+    </table>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-head">
+        <h2><i class="bi bi-journal-text"></i> Bot Event Log <span class="count-badge" id="events-count">0</span></h2>
+    </div>
+    <div class="table-scroll">
+    <table>
+        <thead><tr>
+            <th>Time</th><th>Event</th><th>Detail</th>
+        </tr></thead>
+        <tbody id="events-table"><tr><td colspan="3" class="empty-row">Memuat...</td></tr></tbody>
+    </table>
+    </div>
+</div>
+
+<div class="modal-backdrop" id="modal-backdrop">
+    <div class="modal-box">
+        <h3 id="modal-title">Konfirmasi</h3>
+        <p id="modal-desc">Apakah kamu yakin?</p>
+        <div class="modal-actions">
+            <button class="btn" id="modal-cancel">Batal</button>
+            <button class="btn btn-danger" id="modal-confirm">Ya, Lanjutkan</button>
+        </div>
+    </div>
+</div>
+
+<div class="toast-wrap" id="toast-wrap"></div>
+
+<script>
+let pendingAction = null;
+
+function fmtMoney(v) {
+    if (v === null || v === undefined) return "--";
+    return Number(v).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+}
+function pnlClass(v) { return v >= 0 ? "pnl-pos" : "pnl-neg"; }
+
+function showToast(message, ok) {
+    const wrap = document.getElementById("toast-wrap");
+    const el = document.createElement("div");
+    el.className = "toast " + (ok ? "toast-ok" : "toast-err");
+    el.innerText = message;
+    wrap.appendChild(el);
+    setTimeout(() => el.remove(), 4000);
+}
+
+function openModal(title, desc, onConfirm) {
+    document.getElementById("modal-title").innerText = title;
+    document.getElementById("modal-desc").innerText = desc;
+    document.getElementById("modal-backdrop").classList.add("show");
+    pendingAction = onConfirm;
+}
+function closeModal() {
+    document.getElementById("modal-backdrop").classList.remove("show");
+    pendingAction = null;
+}
+document.getElementById("modal-cancel").onclick = closeModal;
+document.getElementById("modal-confirm").onclick = async () => {
+    const action = pendingAction;
+    closeModal();
+    if (action) await action();
+};
+
+// ---------- WEBSOCKET (data push + actions, all in one connection) ----------
+let ws = null;
+let wsReconnectDelay = 1000;
+let reqCounter = 0;
+const pendingRequests = new Map();
+
+function setWsStatus(online, text) {
+    const pill = document.getElementById("ws-pill");
+    pill.classList.toggle("offline", !online);
+    document.getElementById("ws-text").innerText = text;
+}
+
+function connectAdminWS() {
+    const proto = window.location.protocol === "https:" ? "wss://" : "ws://";
+    ws = new WebSocket(proto + window.location.host + "/ws/admin");
+
+    ws.onopen = () => { wsReconnectDelay = 1000; setWsStatus(true, "Live"); };
+
+    ws.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+        if (msg.type === "snapshot") {
+            setWsStatus(true, msg.connected === false ? "MT5 Disconnected" : "Live");
+            renderPending(msg.pending_orders || []);
+            renderActive(msg.active_trades || []);
+            renderBotStatus(msg.bot_status || null);
+            renderBotEvents(msg.bot_events || []);
+        } else if (msg.type === "action_result") {
+            const resolve = pendingRequests.get(msg.request_id);
+            if (resolve) { pendingRequests.delete(msg.request_id); resolve(msg); }
+        }
+    };
+
+    ws.onclose = (event) => {
+        if (event.code === 4401) { window.location.href = "/admin/login"; return; }
+        setWsStatus(false, "Reconnecting...");
+        setTimeout(connectAdminWS, wsReconnectDelay);
+        wsReconnectDelay = Math.min(wsReconnectDelay * 1.6, 15000);
+    };
+    ws.onerror = () => ws.close();
+}
+
+// Kirim perintah aksi ke server lewat websocket yang sama dengan data feed dan
+// tunggu balasannya (request_id dipakai untuk mencocokkan balasan). Server
+// otomatis push snapshot terbaru setelah aksi dieksekusi.
+function sendAction(type, payload) {
+    return new Promise((resolve) => {
+        if (!ws || ws.readyState !== WebSocket.OPEN) { resolve(null); return; }
+        const request_id = ++reqCounter;
+        pendingRequests.set(request_id, resolve);
+        ws.send(JSON.stringify({ type, request_id, ...(payload || {}) }));
+    });
+}
+
+function renderPending(rows) {
+    document.getElementById("pending-count").innerText = rows.length;
+    let html = "";
+    rows.forEach(o => {
+        html += `<tr>
+            <td class="mono">${o.ticket}</td>
+            <td><span class="badge badge-pending">${o.symbol}</span></td>
+            <td>${o.type}</td>
+            <td class="mono">${o.volume}</td>
+            <td class="mono">${o.price_open}</td>
+            <td class="mono">${o.sl || "-"} / ${o.tp || "-"}</td>
+            <td>${o.setup_time}</td>
+            <td class="detail-text">${o.comment || "-"}</td>
+        </tr>`;
+    });
+    document.getElementById("pending-table").innerHTML = html ||
+        `<tr><td colspan="8" class="empty-row"><i class="bi bi-inbox"></i>Tidak ada pending order.</td></tr>`;
+}
+
+function renderActive(rows) {
+    document.getElementById("active-count").innerText = rows.length;
+    let html = "";
+    rows.forEach(t => {
+        html += `<tr>
+            <td class="mono">${t.ticket}</td>
+            <td><span class="badge ${t.type === 'BUY' ? 'badge-buy' : 'badge-sell'}">${t.symbol}</span></td>
+            <td><span class="badge ${t.type === 'BUY' ? 'badge-buy' : 'badge-sell'}">${t.type}</span></td>
+            <td class="mono">${t.volume}</td>
+            <td class="mono">${t.price_open}</td>
+            <td class="mono">${t.price_current}</td>
+            <td class="mono">${t.sl || "-"} / ${t.tp || "-"}</td>
+            <td>${t.open_time}</td>
+            <td class="mono ${pnlClass(t.pnl)}">${fmtMoney(t.pnl)}</td>
+            <td><button class="x-btn" data-ticket="${t.ticket}" title="Close posisi ini">&times;</button></td>
+        </tr>`;
+    });
+    document.getElementById("active-table").innerHTML = html ||
+        `<tr><td colspan="10" class="empty-row"><i class="bi bi-inbox"></i>Tidak ada posisi aktif.</td></tr>`;
+
+    document.querySelectorAll(".x-btn").forEach(btn => {
+        btn.onclick = () => {
+            const ticket = btn.getAttribute("data-ticket");
+            openModal(
+                "Tutup Posisi #" + ticket,
+                "Posisi ini akan ditutup di harga market saat ini. Lanjutkan?",
+                async () => {
+                    const r = await sendAction("close_position", { ticket: Number(ticket) });
+                    if (r) showToast(r.success ? "Posisi #" + ticket + " ditutup." : "Gagal: " + r.message, r.success);
+                }
+            );
+        };
+    });
+}
+
+// Badge status besar untuk kondisi EA: aktif / halted / tidak respon / no data.
+function setStatusBadge(kind, icon, text) {
+    const el = document.getElementById("bot-status-badge");
+    el.className = "status-badge-lg " + kind;
+    el.innerHTML = `<i class=""></i>${text}`;
+}
+
+function renderBotStatus(status) {
+    const modeDefaultBtn = document.getElementById("mode-default-btn");
+    const modeH24Btn = document.getElementById("mode-h24-btn");
+    const hint = document.getElementById("mode-command-hint");
+    const haltBanner = document.getElementById("bot-halt-banner");
+
+    if (!status) {
+        setStatusBadge("st-idle", "bi-question-circle-fill", "NO DATA");
+        document.getElementById("bot-mode").innerText = "--";
+        haltBanner.classList.remove("show");
+        document.getElementById("bot-scan-state").innerText =
+            "EA belum pernah mengirim status. Cek InpEnableFileLogging dan path BOT_STATUS_LOG_PATH sudah sama dengan folder tempat EA menulis file (lihat Experts log di MT5).";
+        document.getElementById("kpi-bot-trades").innerText = "--";
+        document.getElementById("kpi-bot-daily-pnl").innerText = "--";
+        document.getElementById("kpi-bot-daily-limit").innerText = "--";
+        document.getElementById("kpi-bot-risk").innerText = "--";
+        document.getElementById("kpi-bot-last-signal").innerText = "--";
+        document.getElementById("kpi-bot-resistance").innerText = "--";
+        document.getElementById("kpi-bot-support").innerText = "--";
+        document.getElementById("kpi-bot-last-tick").innerText = "--";
+        document.getElementById("bot-last-update").innerText = "--";
+        modeDefaultBtn.disabled = true;
+        modeH24Btn.disabled = true;
+        hint.innerText = "";
+        return;
+    }
+
+    if (status._stale) {
+        setStatusBadge("st-danger", "bi-wifi-off", "TIDAK RESPON");
+    } else if (status.trading_halted_today) {
+        setStatusBadge("st-warn", "bi-pause-circle-fill", "HALTED");
+    } else {
+        setStatusBadge("st-ok", "bi-play-circle-fill", "AKTIF");
+    }
+
+    document.getElementById("bot-mode").innerText =
+        status.mode === "H24_UNLIMITED" ? "24 Jam ∞ (tanpa batas trade/hari)" : "Default (Direkomendasikan)";
+
+    if (status.trading_halted_today) {
+        haltBanner.classList.add("show");
+        document.getElementById("bot-halt-text").innerText =
+            "Trading dihentikan untuk hari ini — " + (status.halt_reason || "alasan tidak diketahui");
+    } else {
+        haltBanner.classList.remove("show");
+    }
+
+    document.getElementById("bot-scan-state").innerText =
+        status.scan_detail ? `[${status.scan_state || "-"}] ${status.scan_detail}` : (status.scan_state || "--");
+
+    document.getElementById("kpi-bot-trades").innerText =
+        status.mode === "H24_UNLIMITED" ? `${status.trades_today ?? 0} (tanpa batas)` : `${status.trades_today ?? 0} / ${status.max_trades_per_day ?? "-"}`;
+
+    const dailyPnl = status.daily_pnl_percent ?? 0;
+    const pnlEl = document.getElementById("kpi-bot-daily-pnl");
+    pnlEl.innerText = `${dailyPnl}%`;
+    pnlEl.className = "kpi-value mono " + pnlClass(dailyPnl);
+    document.getElementById("kpi-bot-daily-limit").innerText =
+        `limit: -${status.max_daily_loss_percent}%` + (status.max_daily_profit_percent > 0 ? ` / +${status.max_daily_profit_percent}%` : "");
+
+    document.getElementById("kpi-bot-risk").innerText = `${status.risk_percent_per_trade}%`;
+    document.getElementById("kpi-bot-last-signal").innerText =
+        status.last_signal && status.last_signal !== "None" ? `${status.last_signal} (${status.last_signal_time || "-"})` : "Belum ada";
+    document.getElementById("kpi-bot-resistance").innerText =
+        (status.sr_resistance && status.sr_resistance > 0) ? status.sr_resistance.toFixed(2) : "--";
+    document.getElementById("kpi-bot-support").innerText =
+        (status.sr_support && status.sr_support > 0) ? status.sr_support.toFixed(2) : "--";
+    document.getElementById("kpi-bot-last-tick").innerText = status.last_tick_time || "--";
+
+    document.getElementById("bot-last-update").innerText =
+        "Update status terakhir: " + `${status.timestamp || "-"}` + (status._age_seconds != null ? ` (${status._age_seconds}s lalu)` : "");
+
+    // EA selalu polling file perintah mode (tidak ada saklar remote-control terpisah),
+    // jadi tombol hanya dinonaktifkan untuk mode yang sedang aktif.
+    modeDefaultBtn.disabled = status.mode === "DEFAULT_RECOMMENDED";
+    modeH24Btn.disabled = status.mode === "H24_UNLIMITED";
+    hint.innerText = "Perintah ganti mode diterapkan EA dalam beberapa detik (polling berkala di background).";
+}
+
+// Kelompokkan tipe event jadi 3 tingkat keparahan supaya gampang di-scan sekilas.
+const EVENT_BADGE = {
+    ORDER_FAILED: "badge-danger", CLOSE_FAILED: "badge-danger", BREAK_EVEN_FAILED: "badge-danger", LEG_SKIPPED: "badge-danger",
+    ORDER_OPENED: "badge-ok", POSITION_OPENED: "badge-ok", BREAK_EVEN: "badge-ok", POSITION_REVERSED: "badge-ok",
+};
+function eventBadgeClass(eventType) {
+    return EVENT_BADGE[eventType] || "badge-neutral";
+}
+
+function renderBotEvents(rows) {
+    document.getElementById("events-count").innerText = rows.length;
+    let html = "";
+    rows.forEach(e => {
+        html += `<tr>
+            <td class="mono" style="white-space:nowrap;">${e.time || "-"}</td>
+            <td><span class="badge ${eventBadgeClass(e.event)}">${e.event || "-"}</span></td>
+            <td class="detail-text">${e.detail || "-"}</td>
+        </tr>`;
+    });
+    document.getElementById("events-table").innerHTML = html ||
+        `<tr><td colspan="3" class="empty-row"><i class="bi bi-inbox"></i>Belum ada event tercatat.</td></tr>`;
+}
+
+document.getElementById("close-all-btn").onclick = () => {
+    openModal("Close All Position", "Semua posisi aktif akan ditutup sekarang. Tindakan ini tidak bisa dibatalkan. Lanjutkan?", async () => {
+        const r = await sendAction("close_all");
+        if (r) showToast(r.message, r.success);
+    });
+};
+document.getElementById("close-profit-btn").onclick = () => {
+    openModal("Close All Profit", "Semua posisi yang sedang profit akan ditutup sekarang. Lanjutkan?", async () => {
+        const r = await sendAction("close_all_profit");
+        if (r) showToast(r.message, r.success);
+    });
+};
+document.getElementById("close-loss-btn").onclick = () => {
+    openModal("Close All Loss", "Semua posisi yang sedang loss akan ditutup sekarang. Lanjutkan?", async () => {
+        const r = await sendAction("close_all_loss");
+        if (r) showToast(r.message, r.success);
+    });
+};
+document.getElementById("mode-default-btn").onclick = () => {
+    openModal(
+        "Ganti ke Mode Default",
+        "EA akan kembali membatasi jumlah trade per hari sesuai InpMaxTradesPerDay (direkomendasikan). Perubahan diterapkan dalam beberapa detik. Lanjutkan?",
+        async () => {
+            const r = await sendAction("set_mode", { mode: "DEFAULT_RECOMMENDED" });
+            if (r) showToast(r.message, r.success);
+        }
+    );
+};
+document.getElementById("mode-h24-btn").onclick = () => {
+    openModal(
+        "Ganti ke Mode 24 Jam ∞",
+        "Batas jumlah trade per hari akan dinonaktifkan. Risk per trade, daily loss/profit limit, filter spread & ATR TETAP AKTIF. Lanjutkan?",
+        async () => {
+            const r = await sendAction("set_mode", { mode: "H24_UNLIMITED" });
+            if (r) showToast(r.message, r.success);
+        }
+    );
+};
+document.getElementById("logout-btn").onclick = async () => {
+    await fetch("/admin/logout", { method: "POST" });
+    window.location.href = "/admin/login";
+};
+
+connectAdminWS();
+</script>
+</body>
+</html>
