@@ -9,7 +9,7 @@
 //| CHANGELOG.md di folder project ini.                              |
 //+------------------------------------------------------------------+
 #property strict
-#property version   "3.07"
+#property version   "3.10"
 
 #include <Trade\Trade.mqh>
 CTrade trade;
@@ -44,7 +44,7 @@ input double InpAtrSLMultiplier   = 1.10;    // SL lebih rapat drpd versi M5 (se
 input double InpMaxDailyLossPercent = 10.0;   // batas rugi harian (%) sebelum EA berhenti trading
 input double InpMaxLotSize        = 5.0;
 input double InpMaxDailyProfitPercent = 0.0;    // target profit harian (%) (0 = nonaktif)
-input int    InpMaxTradesPerDay   = 3000;       // batas jumlah sinyal/trade per hari saat mode Default (0 = tanpa batas)
+input int    InpMaxTradesPerDay   = 0;       // batas jumlah sinyal/trade per hari saat mode Default (0 = tanpa batas)
 input int    InpMaxOpenPositions  = 6;       // HARD CAP jumlah posisi aktif (semua leg TP1/2/3 dihitung) - sinyal baru ditahan kalau tercapai
 
 input group "=== SL Anti-Stophunt (SL lebih tahan noise, TP tidak ikut melebar) ==="
@@ -52,8 +52,16 @@ input double InpSLNoiseBufferATR    = 0.35;   // buffer tambahan (x ATR) di atas
 input double InpSLSpreadBufferMult  = 1.5;    // buffer tambahan = spread saat ini x nilai ini, ditambah ke SL
 input bool   InpDecoupleTPFromSL    = true;   // true = TP dihitung dari SL DASAR (sebelum buffer), SL boleh lebih lebar tanpa TP ikut menjauh
 input bool   InpEnableBreakEven     = true;   // pindahkan SL ke breakeven+buffer setelah profit floating cukup
-input double InpBreakEvenTriggerRR  = 0.5;    // ambang trigger breakeven, dalam kelipatan SL DASAR (bukan SL lebar aktual)
-input double InpBreakEvenBufferPoints = 50;   // SL breakeven digeser sejauh ini (poin) dari harga entry, searah profit
+input double InpBreakEvenTriggerRR  = 1.0;    // ambang trigger breakeven, dalam kelipatan SL DASAR (bukan SL lebar aktual).
+                                               // WAJIB > InpTP1_RR di bawah - kalau trigger breakeven lebih kecil dari TP1,
+                                               // SL akan digeser ke breakeven duluan SEBELUM harga sempat sampai TP1, dan
+                                               // koreksi/noise M1 yang wajar bakal kena SL-breakeven itu lebih dulu daripada
+                                               // TP1 (efeknya: TP1 nyaris tidak pernah kesentuh walau harga sering ke arah
+                                               // yang benar). Beri jarak (bukan pas sama) supaya TP1 sempat kesentuh duluan.
+input double InpBreakEvenBufferPoints = 100;  // SL breakeven digeser sejauh ini (poin) dari harga entry, searah profit
+input double InpBreakEvenSpreadBufferMult = 3.0; // buffer breakeven = spread SAAT itu x nilai ini (dibuat lebih besar dari
+                                                   // InpSLSpreadBufferMult supaya tetap tahan kalau spread melebar mendadak
+                                                   // - mis. spike harga cepat - di antara saat BE di-set dan saat SL tersentuh)
 
 input group "=== Multi-TP (1 sinyal = 3 order) ==="
 input double InpTP1_RR            = 0.8;     // TP cepat, kunci profit awal
@@ -84,6 +92,9 @@ input bool   InpEnablePullback     = true;    // aktifkan mode pullback M1 (sumb
 input int    InpPullbackEmaPeriod  = 20;      // EMA M1 acuan pullback
 input double InpPullbackTouchATR   = 0.35;    // toleransi "menyentuh" EMA = ATR x ini
 input double InpPullbackMinBodyATR = 0.20;    // body candle continuation minimal (x ATR)
+input bool   InpPullbackChopFilter = true;    // tolak sinyal pullback kalau market (di InpTrendTF) sedang choppy/sideways (ADX rendah)
+input int    InpChopAdxPeriod      = 14;      // periode ADX utk cek kekuatan trend
+input double InpChopAdxMinLevel    = 20.0;    // ADX di bawah ini dianggap choppy/tanpa trend jelas - pullback ditahan
 
 input group "=== Multi-Timeframe Trend Confirmation (M1) ==="
 input bool   InpRequireM1TrendAlign = true;   // true = BREAKOUT/PULLBACK ditahan kalau trend M1 berlawanan dgn trend M15 (cegah entry searah trend M15 yg sudah basi)
@@ -100,13 +111,15 @@ input bool   InpEnableFileLogging = true;
 input bool   InpUseCommonFolder   = true;
 input string InpStatusFileName    = "range_breakout_m1_status.json";
 input string InpEventsFileName    = "range_breakout_m1_events.json";
-input int    InpStatusWriteIntervalSec = 3;
-input int    InpScanLogIntervalSec = 3;
+input int    InpStatusWriteIntervalSec = 5;
+input int    InpScanLogIntervalSec = 20;
+input int    InpEventsKeepLast    = 5;       // jumlah event terakhir yang disimpan di file log (rolling buffer)
 input string InpCommandFileName   = "bot_command.json";
-input int    InpCommandPollIntervalSec = 3;
+input int    InpCommandPollIntervalSec = 5;
 
 int hEmaFast = INVALID_HANDLE, hEmaSlow = INVALID_HANDLE, hAtr = INVALID_HANDLE, hEmaPullback = INVALID_HANDLE;
 int hEmaM1Fast = INVALID_HANDLE, hEmaM1Slow = INVALID_HANDLE;
+int hAdxTrend = INVALID_HANDLE;
 datetime lastBarTime = 0, lastTickTime = 0, lastStatusWrite = 0, lastScanLog = 0;
 datetime dayStartTime = 0;
 double dayStartEquity = 0;
@@ -175,55 +188,23 @@ void PollCommandFile()
   }
 
 // ======================== PERBAIKAN APPEND EVENT ========================
-void AppendEvent(string eventType, string detail)
+// Sekarang hanya menyimpan 1 baris terakhir (timpa) agar file tidak membengkak.
+void AppendEvent(string eventType,string detail)
   {
    if(!InpEnableFileLogging) return;
-
-   // Buat baris JSON baru
-   string newLine = StringFormat("{\"time\":\"%s\",\"symbol\":\"%s\",\"event\":\"%s\",\"detail\":\"%s\"}",
-                                  TimeToString(TimeCurrent(), TIME_DATE|TIME_SECONDS),
-                                  _Symbol,
-                                  eventType,
-                                  JsonEscape(detail));
-
-   int commonFlag = InpUseCommonFolder ? FILE_COMMON : 0;
-
-   string oldLines[];
-   int lineCount = 0;
-   ArrayResize(oldLines, 0);
-
-   int readFlags = FILE_READ|FILE_TXT|FILE_ANSI|FILE_SHARE_READ|FILE_SHARE_WRITE|commonFlag;
-   int rfile = FileOpen(InpEventsFileName, readFlags);
-   if(rfile != INVALID_HANDLE)
-     {
-      while(!FileIsEnding(rfile))
-        {
-         string ln = FileReadString(rfile);
-         if(StringLen(ln) > 0)
-           {
-            ArrayResize(oldLines, lineCount+1);
-            oldLines[lineCount] = ln;
-            lineCount++;
-           }
-        }
-      FileClose(rfile);
-     }
-
-   ArrayResize(oldLines, lineCount+1);
-   oldLines[lineCount] = newLine;
-   lineCount++;
-
-   int maxLines = 5;
-   int startIdx = (lineCount > maxLines) ? (lineCount - maxLines) : 0;
-
-   int writeFlags = FILE_WRITE|FILE_TXT|FILE_ANSI|FILE_SHARE_READ|FILE_SHARE_WRITE|commonFlag;
-   int wfile = FileOpen(InpEventsFileName, writeFlags);
-   if(wfile == INVALID_HANDLE) return;
-
-   for(int i = startIdx; i < lineCount; i++)
-      FileWriteString(wfile, oldLines[i] + "\r\n");
-
-   FileClose(wfile);
+   // Buat satu baris JSON
+   string line=StringFormat("{\"time\":\"%s\",\"symbol\":\"%s\",\"event\":\"%s\",\"detail\":\"%s\"}\r\n",
+                            TimeToString(TimeCurrent(),TIME_DATE|TIME_SECONDS),
+                            _Symbol,
+                            eventType,
+                            JsonEscape(detail));
+   // Buka dengan mode WRITE (tanpa READ) untuk menimpa seluruh isi file
+   int flags=FILE_WRITE|FILE_TXT|FILE_ANSI|FILE_SHARE_READ|FILE_SHARE_WRITE;
+   if(InpUseCommonFolder) flags|=FILE_COMMON;
+   int file=FileOpen(InpEventsFileName,flags);
+   if(file==INVALID_HANDLE) return;
+   FileWriteString(file,line);
+   FileClose(file);
   }
 
 void SetScanState(string state,string detail)
@@ -625,6 +606,18 @@ bool IsPullbackSignal(int trend,double atr,string &reason)
    double emaP=GetBufferValue(hEmaPullback);
    if(emaP<=0) { reason="EMA pullback belum siap"; return false; }
 
+   // --- Filter choppy/sideways: pullback-continuation cuma valid kalau InpTrendTF
+   // memang sedang trending (ADX di atas ambang), bukan sideways. Di market choppy,
+   // candle "wick ke EMA lalu close balik" gampang muncul tanpa arti trend apapun -
+   // itu yang bikin entry pullback kelihatan asal padahal cuma noise konsolidasi. ---
+   if(InpPullbackChopFilter)
+     {
+      double adx=GetBufferValue(hAdxTrend);
+      if(adx<=0) { reason="ADX belum siap utk cek choppy filter"; return false; }
+      if(adx<InpChopAdxMinLevel)
+        { reason=StringFormat("Market choppy/sideways (ADX %.1f < %.1f di %s), pullback ditahan",adx,InpChopAdxMinLevel,EnumToString(InpTrendTF)); return false; }
+     }
+
    MqlRates rates[]; ArraySetAsSeries(rates,true);
    if(CopyRates(_Symbol,InpEntryTF,1,2,rates)!=2) { reason="History M1 belum cukup utk cek pullback"; return false; }
 
@@ -791,7 +784,7 @@ void ManageBreakEven()
    long   freezeLevelPts=SymbolInfoInteger(_Symbol,SYMBOL_TRADE_FREEZE_LEVEL);
    double minDist=(double)MathMax(stopLevelPts,freezeLevelPts)*_Point;
    double spreadPrice=tick.ask-tick.bid;
-   double bufferPrice=MathMax(InpBreakEvenBufferPoints*_Point, spreadPrice*InpSLSpreadBufferMult);
+   double bufferPrice=MathMax(InpBreakEvenBufferPoints*_Point, spreadPrice*InpBreakEvenSpreadBufferMult);
    bufferPrice=MathMax(bufferPrice, minDist+_Point);
 
    for(int i=PositionsTotal()-1;i>=0;i--)
@@ -1002,12 +995,22 @@ int OnInit()
    if(InpSRMinRangeATR<0) return INIT_PARAMETERS_INCORRECT;
 
    if(InpPullbackEmaPeriod<=0 || InpPullbackTouchATR<=0 || InpPullbackMinBodyATR<=0) return INIT_PARAMETERS_INCORRECT;
+   if(InpPullbackChopFilter && (InpChopAdxPeriod<=0 || InpChopAdxMinLevel<0)) return INIT_PARAMETERS_INCORRECT;
 
    if(InpM1TrendEmaFast<=0 || InpM1TrendEmaSlow<=0 || InpM1TrendEmaFast>=InpM1TrendEmaSlow) return INIT_PARAMETERS_INCORRECT;
    if(InpMomentumMinBodyATR<=0 || InpMomentumConfirmBars<1) return INIT_PARAMETERS_INCORRECT;
 
    if(InpSLNoiseBufferATR<0 || InpSLSpreadBufferMult<0) return INIT_PARAMETERS_INCORRECT;
-   if(InpEnableBreakEven && (InpBreakEvenTriggerRR<=0 || InpBreakEvenBufferPoints<0)) return INIT_PARAMETERS_INCORRECT;
+   if(InpEnableBreakEven && (InpBreakEvenTriggerRR<=0 || InpBreakEvenBufferPoints<0 || InpBreakEvenSpreadBufferMult<0)) return INIT_PARAMETERS_INCORRECT;
+   // Trigger breakeven WAJIB lebih besar dari TP1_RR - kalau tidak, SL akan digeser
+   // ke breakeven sebelum harga sempat sampai TP1, dan TP1 nyaris tidak akan pernah
+   // kesentuh (lihat catatan di deklarasi InpBreakEvenTriggerRR di atas).
+   if(InpEnableBreakEven && InpBreakEvenTriggerRR<=InpTP1_RR)
+     {
+      Print("EA init GAGAL: InpBreakEvenTriggerRR (",InpBreakEvenTriggerRR,") harus lebih besar dari InpTP1_RR (",InpTP1_RR,
+            "), kalau tidak SL breakeven akan menutup posisi sebelum TP1 sempat kesentuh.");
+      return INIT_PARAMETERS_INCORRECT;
+     }
 
    SymbolSelect(_Symbol,true);
    hEmaFast=iMA(_Symbol,InpTrendTF,InpTrendEmaFast,0,MODE_EMA,PRICE_CLOSE);
@@ -1016,8 +1019,9 @@ int OnInit()
    hEmaPullback=iMA(_Symbol,InpEntryTF,InpPullbackEmaPeriod,0,MODE_EMA,PRICE_CLOSE);
    hEmaM1Fast=iMA(_Symbol,InpEntryTF,InpM1TrendEmaFast,0,MODE_EMA,PRICE_CLOSE);
    hEmaM1Slow=iMA(_Symbol,InpEntryTF,InpM1TrendEmaSlow,0,MODE_EMA,PRICE_CLOSE);
+   hAdxTrend=iADX(_Symbol,InpTrendTF,InpChopAdxPeriod);
    if(hEmaFast==INVALID_HANDLE || hEmaSlow==INVALID_HANDLE || hAtr==INVALID_HANDLE || hEmaPullback==INVALID_HANDLE
-      || hEmaM1Fast==INVALID_HANDLE || hEmaM1Slow==INVALID_HANDLE) return INIT_FAILED;
+      || hEmaM1Fast==INVALID_HANDLE || hEmaM1Slow==INVALID_HANDLE || hAdxTrend==INVALID_HANDLE) return INIT_FAILED;
    indicatorsReady=true; ResetDay(); EventSetTimer(1);
    SetScanState("STARTING","Range Breakout M1 MultiTP siap; menunggu candle baru");
    return INIT_SUCCEEDED;
@@ -1032,6 +1036,7 @@ void OnDeinit(const int reason)
    if(hEmaPullback!=INVALID_HANDLE) IndicatorRelease(hEmaPullback);
    if(hEmaM1Fast!=INVALID_HANDLE) IndicatorRelease(hEmaM1Fast);
    if(hEmaM1Slow!=INVALID_HANDLE) IndicatorRelease(hEmaM1Slow);
+   if(hAdxTrend!=INVALID_HANDLE) IndicatorRelease(hAdxTrend);
   }
 
 void OnTimer()
